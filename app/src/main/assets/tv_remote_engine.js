@@ -1,19 +1,18 @@
 /**
- * EBA Android TV Kumanda, Klavye & Mekansal Navigasyon Motoru v3.0
+ * EBA Android TV Evrensel Kumanda & Mekansal Navigasyon Motoru v4.0 (Universal)
  * 
- * Özel İyileştirmeler:
- * 1. e-Devlet ve Giriş Ekranları Özel Form Yönetimi (T.C. -> Şifre -> Giriş Yap)
- * 2. Sanal Klavye Otomatik Tetikleme (AndroidTV.showKeyboard)
- * 3. Yazı yazma alanından (Input) çıkamama hatası düzeltildi (Yukarı/Aşağı ile alanlar arası geçiş)
- * 4. Klavyede yazı yazarken tuşların engellenmesi engellendi (Yazma serbestisi)
- * 5. Modern EBA (www.eba.gov.tr) dinamik bileşen ve menü uyumu
+ * Yenilikler:
+ * 1. Otomatik Modal / Duyuru Yakalama (Duyuru çıkarsa 'Kapat' veya 'Tamam'a anında odaklanır)
+ * 2. iFrame ve Alt Sayfa Taraması (Test soruları ve interaktif modüller)
+ * 3. Açılır Menüler (Dropdowns & Navbar Menüleri)
+ * 4. Sabit Başlık (Sticky Header) Dengeleme
+ * 5. Asla Kaybolmayan Sürekli Odak Koruması (Focus Guard)
  */
 
 (function () {
-    console.log("[EBA TV v3] Akıllı Navigasyon ve Klavye Motoru Devrede.");
+    console.log("[EBA TV v4.0 Universal] Navigasyon Motoru Devrede.");
 
-    // 1. TV Odak Stilleri
-    const styleId = "eba-tv-v3-styles";
+    const styleId = "eba-tv-v4-styles";
     if (!document.getElementById(styleId)) {
         const style = document.createElement("style");
         style.id = styleId;
@@ -23,16 +22,19 @@
                 outline-offset: 3px !important;
                 box-shadow: 0 0 25px rgba(255, 152, 0, 0.95) !important;
                 transform: scale(1.03) !important;
-                transition: transform 0.12s ease-out, outline 0.12s ease-out !important;
+                transition: transform 0.1s ease-out, outline 0.1s ease-out !important;
                 z-index: 99999 !important;
             }
-            /* Input alanlarında mavi odak */
             input.tv-focused, textarea.tv-focused {
                 outline: 4px solid #00bcd4 !important;
                 box-shadow: 0 0 25px rgba(0, 188, 212, 0.95) !important;
                 background-color: #fffde7 !important;
             }
-            /* Fare imlecini gizle */
+            /* Kapat butonları için özel kırmızı odak */
+            .modal-close.tv-focused, .btn-close.tv-focused, [data-dismiss="modal"].tv-focused {
+                outline: 4px solid #f44336 !important;
+                box-shadow: 0 0 25px rgba(244, 67, 54, 0.95) !important;
+            }
             * {
                 cursor: none !important;
                 -webkit-tap-highlight-color: transparent !important;
@@ -52,30 +54,38 @@
         '[tabindex="0"]',
         '[role="button"]',
         '[role="link"]',
+        '[role="tab"]',
         '[onclick]',
-        '.btn',
-        '.button',
-        '.card',
-        '.course-card',
-        '.unit-item',
-        '.video-item',
+        '.btn', '.button',
+        '.card', '.course-card', '.unit-item', '.subject-item',
+        '.video-item', '.exam-item', '.lesson-box',
+        '.dropdown-item', '.nav-link', '.menu-item',
         'video'
     ].join(', ');
 
-    // 2. Tıklanabilir öğeleri bul
-    function prepareElements() {
+    // 1. Tıklanabilir tüm öğeleri hazırla (iFrameler dahil)
+    function prepareElements(doc = document) {
         try {
-            document.querySelectorAll(INTERACTIVE_SELECTOR).forEach(el => {
+            doc.querySelectorAll(INTERACTIVE_SELECTOR).forEach(el => {
                 if (!el.getAttribute("tabindex") && el.tagName !== "INPUT" && el.tagName !== "BUTTON" && el.tagName !== "A") {
                     el.setAttribute("tabindex", "0");
                 }
             });
+
+            // Erişilebilir iFrameleri de tara
+            doc.querySelectorAll('iframe').forEach(iframe => {
+                try {
+                    const iDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (iDoc) prepareElements(iDoc);
+                } catch (e) {}
+            });
         } catch (e) {}
     }
 
-    // 3. Görünür Öğeleri Listele
+    // 2. Ekrandaki aktif ve görünür öğeleri topla
     function getFocusableElements() {
-        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container');
+        // Öncelik 1: Açık bir modal/duyuru var mı?
+        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container, .modal-dialog, .popup-container');
         const container = modal || document;
 
         const all = Array.from(container.querySelectorAll(INTERACTIVE_SELECTOR));
@@ -92,7 +102,7 @@
         });
     }
 
-    // 4. Odak Verme ve Klavye Yönetimi
+    // 3. Odak Yönetimi
     function setFocus(el, shouldOpenKeyboard = false) {
         if (!el) return;
         if (currentFocus && currentFocus !== el) {
@@ -109,12 +119,12 @@
                 window.AndroidTV.showKeyboard();
             }
         } else {
-            // Input dışı bir yere geçildiyse klavyeyi gizle
             if (window.AndroidTV && window.AndroidTV.hideKeyboard) {
                 window.AndroidTV.hideKeyboard();
             }
         }
 
+        // Sabit başlıkları hesaba katarak ortala
         currentFocus.scrollIntoView({
             behavior: "smooth",
             block: "center",
@@ -122,35 +132,37 @@
         });
     }
 
-    // 5. e-Devlet ve Form Odak Sıralayıcısı (Özel Kural)
+    // 4. Modal / Duyuru Varsa Doğrudan Butonuna Odaklan
+    function checkAndFocusModals() {
+        const modal = document.querySelector('.modal.show, [role="dialog"], .swal2-container, .announcement-popup');
+        if (modal) {
+            const btn = modal.querySelector('button.close, .btn-close, .btn-primary, [data-dismiss="modal"], button');
+            if (btn && currentFocus !== btn) {
+                setFocus(btn, false);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 5. e-Devlet Giriş Formu Otomasyonu
     function handleFormNavigation(direction) {
         if (!currentFocus) return false;
-        
-        // e-Devlet veya standart form alanları
         const isTrid = currentFocus.id === "trid" || currentFocus.name === "trid";
         const isPwd = currentFocus.id === "egp_pwd" || currentFocus.type === "password";
 
         if (direction === "DOWN") {
             if (isTrid) {
-                const pwdInput = document.querySelector('input[type="password"], #egp_pwd');
-                if (pwdInput) {
-                    setFocus(pwdInput, true);
-                    return true;
-                }
+                const pwd = document.querySelector('input[type="password"], #egp_pwd');
+                if (pwd) { setFocus(pwd, true); return true; }
             } else if (isPwd) {
-                const submitBtn = document.querySelector('input[type="submit"], button[name="submitButton"], .btn-primary, button[type="submit"]');
-                if (submitBtn) {
-                    setFocus(submitBtn, false);
-                    return true;
-                }
+                const btn = document.querySelector('input[type="submit"], button[name="submitButton"], .btn-primary, button[type="submit"]');
+                if (btn) { setFocus(btn, false); return true; }
             }
         } else if (direction === "UP") {
             if (isPwd) {
-                const tridInput = document.querySelector('#trid, input[name="trid"], input[type="text"]');
-                if (tridInput) {
-                    setFocus(tridInput, true);
-                    return true;
-                }
+                const trid = document.querySelector('#trid, input[name="trid"], input[type="text"]');
+                if (trid) { setFocus(trid, true); return true; }
             }
         }
         return false;
@@ -158,7 +170,6 @@
 
     // 6. 2D Mekânsal Navigasyon
     function navigate(direction) {
-        // Önce form/e-Devlet özel kuralını dene
         if (handleFormNavigation(direction)) return;
 
         const elements = getFocusableElements();
@@ -187,30 +198,24 @@
             const dy = center.y - curCenter.y;
 
             let inDirection = false;
-            let primaryDist = 0;
-            let secondaryDist = 0;
+            let primary = 0, secondary = 0;
 
             if (direction === "UP" && dy < -4) {
                 inDirection = true;
-                primaryDist = Math.abs(dy);
-                secondaryDist = Math.abs(dx);
+                primary = Math.abs(dy); secondary = Math.abs(dx);
             } else if (direction === "DOWN" && dy > 4) {
                 inDirection = true;
-                primaryDist = Math.abs(dy);
-                secondaryDist = Math.abs(dx);
+                primary = Math.abs(dy); secondary = Math.abs(dx);
             } else if (direction === "LEFT" && dx < -4) {
                 inDirection = true;
-                primaryDist = Math.abs(dx);
-                secondaryDist = Math.abs(dy);
+                primary = Math.abs(dx); secondary = Math.abs(dy);
             } else if (direction === "RIGHT" && dx > 4) {
                 inDirection = true;
-                primaryDist = Math.abs(dx);
-                secondaryDist = Math.abs(dy);
+                primary = Math.abs(dx); secondary = Math.abs(dy);
             }
 
             if (inDirection) {
-                // Ana eksene göre ağırlıklı mesafe
-                const distance = Math.hypot(primaryDist, secondaryDist * 1.8);
+                const distance = Math.hypot(primary, secondary * 1.8);
                 if (distance < minDistance) {
                     minDistance = distance;
                     bestCandidate = el;
@@ -222,15 +227,15 @@
             const isInput = bestCandidate.tagName === "INPUT" && bestCandidate.type !== "submit";
             setFocus(bestCandidate, isInput);
         } else {
-            // Aday bulunamazsa sayfayı kaydır
-            if (direction === "DOWN") window.scrollBy({ top: 250, behavior: "smooth" });
-            else if (direction === "UP") window.scrollBy({ top: -250, behavior: "smooth" });
-            else if (direction === "RIGHT") window.scrollBy({ left: 300, behavior: "smooth" });
-            else if (direction === "LEFT") window.scrollBy({ left: -300, behavior: "smooth" });
+            // Görünür sınırda öğe yoksa sayfayı kaydır
+            if (direction === "DOWN") window.scrollBy({ top: 300, behavior: "smooth" });
+            else if (direction === "UP") window.scrollBy({ top: -300, behavior: "smooth" });
+            else if (direction === "RIGHT") window.scrollBy({ left: 350, behavior: "smooth" });
+            else if (direction === "LEFT") window.scrollBy({ left: -350, behavior: "smooth" });
         }
     }
 
-    // 7. Tıklama
+    // 7. Eksiksiz Tıklama
     function simulateFullClick(el) {
         if (!el) return;
         const isInput = el.tagName === "INPUT" && el.type !== "submit";
@@ -245,9 +250,7 @@
 
         ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
             const evt = new MouseEvent(type, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
+                bubbles: true, cancelable: true, view: window,
                 clientX: el.getBoundingClientRect().left + 5,
                 clientY: el.getBoundingClientRect().top + 5
             });
@@ -255,56 +258,44 @@
         });
     }
 
-    // 8. Tuş Dinleyicisi
+    // 8. Tuş Dinleyici
     window.addEventListener("keydown", function (e) {
         const isCurrentlyTyping = currentFocus && 
             (currentFocus.tagName === "INPUT" && currentFocus.type !== "submit") && 
             document.activeElement === currentFocus;
 
-        // D-Pad Yön Tuşları
         if (e.keyCode === 38 || e.keyCode === 19) { // UP
-            navigate("UP");
-            e.preventDefault();
+            navigate("UP"); e.preventDefault();
         } else if (e.keyCode === 40 || e.keyCode === 20) { // DOWN
-            navigate("DOWN");
-            e.preventDefault();
+            navigate("DOWN"); e.preventDefault();
         } else if (e.keyCode === 37 || e.keyCode === 21) { // LEFT
-            // Eğer bir input içinde yazı yazılıyorsa metin içinde imleç hareketine izin ver
-            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart > 0) {
-                return; // Normal imleç hareket etsin
-            }
-            navigate("LEFT");
-            e.preventDefault();
+            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart > 0) return;
+            navigate("LEFT"); e.preventDefault();
         } else if (e.keyCode === 39 || e.keyCode === 22) { // RIGHT
-            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart < currentFocus.value.length) {
-                return;
-            }
-            navigate("RIGHT");
-            e.preventDefault();
+            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart < currentFocus.value.length) return;
+            navigate("RIGHT"); e.preventDefault();
         } else if (e.keyCode === 13 || e.keyCode === 23) { // OK / ENTER
             if (currentFocus) {
                 simulateFullClick(currentFocus);
-                // Submit butonu değilse default davranışı engelle
-                if (currentFocus.type !== "submit") {
-                    e.preventDefault();
-                }
+                if (currentFocus.type !== "submit") e.preventDefault();
             }
         }
-        // Diğer tuşlar (harfler, rakamlar, Backspace vb.) engellenmez; doğrudan inputa yazılır.
     }, true);
 
-    // 9. Sayfa Değişikliklerini Dinleme (SPA ve DOM)
-    function onPageUpdate() {
+    // 9. Dinamik Sayfa Güncelleme ve Sürekli Odak Koruması
+    function updatePage() {
         prepareElements();
-        // Eğer e-Devlet giriş sayfasındaysak doğrudan T.C. kutucuğuna odaklan
+        if (checkAndFocusModals()) return;
+
+        // e-Devlet girişindeyse T.C. kutucuğuna odaklan
         if (window.location.hostname.includes("edevlet")) {
             const trid = document.querySelector('#trid, input[name="trid"]');
-            if (trid) {
+            if (trid && currentFocus !== trid && !document.activeElement.tagName.includes("INPUT")) {
                 setTimeout(() => setFocus(trid, true), 300);
                 return;
             }
         }
-        // Sayfada ilk odak yoksa ilk öğeye odaklan
+
         if (!currentFocus || !document.body.contains(currentFocus)) {
             const elements = getFocusableElements();
             if (elements.length > 0) setFocus(elements[0]);
@@ -314,15 +305,22 @@
     const origPush = history.pushState;
     history.pushState = function () {
         origPush.apply(this, arguments);
-        setTimeout(onPageUpdate, 300);
+        setTimeout(updatePage, 350);
     };
 
-    window.addEventListener("popstate", () => setTimeout(onPageUpdate, 300));
-    window.addEventListener("DOMContentLoaded", onPageUpdate);
-    window.addEventListener("load", onPageUpdate);
+    window.addEventListener("popstate", () => setTimeout(updatePage, 350));
+    window.addEventListener("DOMContentLoaded", updatePage);
+    window.addEventListener("load", updatePage);
+
+    // Sürekli Odak Koruyucu (Sayfa değiştiğinde veya odak düştüğünde 1 saniyede bir kurtarır)
+    setInterval(() => {
+        if (!currentFocus || !document.body.contains(currentFocus) || window.getComputedStyle(currentFocus).display === 'none') {
+            updatePage();
+        }
+    }, 1200);
 
     const observer = new MutationObserver(() => prepareElements());
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    onPageUpdate();
+    updatePage();
 })();

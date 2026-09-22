@@ -3,6 +3,8 @@ package com.meb.ebatv;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.net.http.SslError;
 import android.os.Bundle;
 import android.view.KeyEvent;
@@ -23,10 +25,15 @@ import java.io.InputStreamReader;
 
 public class MainActivity extends Activity {
 
+    private static final String PREFS_NAME = "EbaTVPrefs";
+    private static final String KEY_LAST_URL = "last_visited_url";
+    private static final String DEFAULT_URL = "https://www.eba.gov.tr/";
+
     private WebView webView;
     private FrameLayout customViewContainer;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
+    private SharedPreferences prefs;
     private String injectedJs = "";
 
     public class TVInterface {
@@ -63,15 +70,20 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Ekrani her zaman acik tut (Ders izlerken ekran kararmasin)
+        // TV Ekranini ders izlerken acik tut
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+
         FrameLayout rootLayout = new FrameLayout(this);
+        rootLayout.setBackgroundColor(Color.parseColor("#121212")); // Goz almayan koyu tema
+
         webView = new WebView(this);
+        webView.setBackgroundColor(Color.parseColor("#121212"));
+
         customViewContainer = new FrameLayout(this);
         customViewContainer.setVisibility(View.GONE);
 
-        // TV Klavyesi icin odaklanabilirlik zorunlu
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
 
@@ -85,8 +97,9 @@ public class MainActivity extends Activity {
         loadInjectionScript();
         setupWebView();
 
-        // En son ve modern EBA ana sayfasi
-        webView.loadUrl("https://www.eba.gov.tr/");
+        // Akilli Baslatma: Kullanici daha once ders ekranina girdiyse dogrudan orayi ac
+        String lastUrl = prefs.getString(KEY_LAST_URL, DEFAULT_URL);
+        webView.loadUrl(lastUrl);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -102,17 +115,19 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        
+        // Hiz ve kalici onbellek
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        // Modern Chrome Masaüstü / TV User Agent
+        // Modern TV / Chrome Masaustu Arayuzu
         s.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 SmartTV/EBA");
 
-        // Cerezleri kalici kil (e-Devlet ve EBA arasi gecisler icin)
+        // Cerezleri kalici kil
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
+        cm.flush();
 
-        // JavaScript Koprusunu Ekle (Sanal Klavye Kontrolu Icin)
         webView.addJavascriptInterface(new TVInterface(), "AndroidTV");
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -153,7 +168,15 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                
+                // Cerezleri diske yaz (Oturum kaybolmasin)
                 CookieManager.getInstance().flush();
+
+                // Eger giris yapilmissa (ders.eba.gov.tr icindeyse), son adresi kaydet
+                if (url != null && url.contains("ders.eba.gov.tr") && !url.contains("login") && !url.contains("giris")) {
+                    prefs.edit().putString(KEY_LAST_URL, url).apply();
+                }
+
                 injectEngine();
             }
 
@@ -184,6 +207,19 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Uygulama kapandiginda veya arka plana alindiginda oturum cerezlerini diske kaydet
+        CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        CookieManager.getInstance().flush();
     }
 
     @Override
