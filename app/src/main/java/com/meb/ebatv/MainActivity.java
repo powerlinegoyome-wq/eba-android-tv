@@ -2,14 +2,16 @@ package com.meb.ebatv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.graphics.Bitmap;
+import android.content.Context;
 import android.net.http.SslError;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -27,6 +29,35 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback customViewCallback;
     private String injectedJs = "";
 
+    public class TVInterface {
+        @JavascriptInterface
+        public void showKeyboard() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    webView.requestFocus();
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.showSoftInput(webView, InputMethodManager.SHOW_FORCED);
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void hideKeyboard() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+                    }
+                }
+            });
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,11 +66,14 @@ public class MainActivity extends Activity {
         // Ekrani her zaman acik tut (Ders izlerken ekran kararmasin)
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Ana Duzen: WebView + Tam Ekran Video Kapsayicisi
         FrameLayout rootLayout = new FrameLayout(this);
         webView = new WebView(this);
         customViewContainer = new FrameLayout(this);
         customViewContainer.setVisibility(View.GONE);
+
+        // TV Klavyesi icin odaklanabilirlik zorunlu
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
 
         rootLayout.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -51,7 +85,8 @@ public class MainActivity extends Activity {
         loadInjectionScript();
         setupWebView();
 
-        webView.loadUrl("https://ders.eba.gov.tr/ders/");
+        // En son ve modern EBA ana sayfasi
+        webView.loadUrl("https://www.eba.gov.tr/");
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -60,24 +95,26 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
-        s.setMediaPlaybackRequiresUserGesture(false); // Videolarin kumandadan dogrudan baslayabilmesi
+        s.setMediaPlaybackRequiresUserGesture(false);
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
-        s.setSupportMultipleWindows(false); // Yeni pencerelerin WebView icinde kalmasini sagla
+        s.setSupportMultipleWindows(false);
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        // TV / Masaustu User-Agent
-        s.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 SmartTV/EBA");
+        // Modern Chrome Masaüstü / TV User Agent
+        s.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 SmartTV/EBA");
 
-        // Cerezleri etkin kil
+        // Cerezleri kalici kil (e-Devlet ve EBA arasi gecisler icin)
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
 
-        // Tam Ekran Video Destegi (onShowCustomView)
+        // JavaScript Koprusunu Ekle (Sanal Klavye Kontrolu Icin)
+        webView.addJavascriptInterface(new TVInterface(), "AndroidTV");
+
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -116,16 +153,16 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                CookieManager.getInstance().flush();
                 injectEngine();
             }
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                handler.proceed(); // MEB sertifika gecislerinde kopma yasanmasin
+                handler.proceed();
             }
         });
 
-        // WebView odaklanmasini sagla
         webView.requestFocus();
     }
 
@@ -149,20 +186,16 @@ public class MainActivity extends Activity {
         }
     }
 
-    // Kumanda Geri ve D-Pad Tuslarini Yonetme
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
 
-            // Geri Tusu
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                // 1. Tam ekran video aciksa once tam ekrandan cik
                 if (customView != null) {
                     ((WebChromeClient) webView.getWebChromeClient()).onHideCustomView();
                     return true;
                 }
-                // 2. EBA icinde geri gidilebiliyorsa geri git
                 if (webView.canGoBack()) {
                     webView.goBack();
                     return true;

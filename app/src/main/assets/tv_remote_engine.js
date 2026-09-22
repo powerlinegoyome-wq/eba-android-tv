@@ -1,43 +1,41 @@
 /**
- * EBA Android TV Ultra Optimize Kumanda & Mekansal Navigasyon Motoru v2.0
+ * EBA Android TV Kumanda, Klavye & Mekansal Navigasyon Motoru v3.0
  * 
- * Özellikler:
- * 1. SPA (Single Page App) Sayfa Geçişlerini Dinleme (pushState, popstate, hashchange)
- * 2. MutationObserver ile dinamik yüklenen ders kartlarını ve butonları anında yakalama
- * 3. Kaybolan odak kurtarma (Akıllı Auto-Recovery)
- * 4. Gelişmiş 2D Geometrik Mesafe Hesaplama (Spatial Navigation)
- * 5. Yatay Kayan Listeler / Karuseller için otomatik kaydırma (Horizontal Carousel Scroll)
- * 6. Video Oynatıcı Kontrolleri (OK = Duraklat/Oynat, Sol = -10sn, Sağ = +10sn)
- * 7. Çoklu Event Tetikleme (pointerdown, mousedown, mouseup, click - Vue/Angular/React uyumu)
- * 8. Açılır Pencereler / Modallar (Modal Focus Trapping)
+ * Özel İyileştirmeler:
+ * 1. e-Devlet ve Giriş Ekranları Özel Form Yönetimi (T.C. -> Şifre -> Giriş Yap)
+ * 2. Sanal Klavye Otomatik Tetikleme (AndroidTV.showKeyboard)
+ * 3. Yazı yazma alanından (Input) çıkamama hatası düzeltildi (Yukarı/Aşağı ile alanlar arası geçiş)
+ * 4. Klavyede yazı yazarken tuşların engellenmesi engellendi (Yazma serbestisi)
+ * 5. Modern EBA (www.eba.gov.tr) dinamik bileşen ve menü uyumu
  */
 
 (function () {
-    console.log("[EBA TV] Navigasyon Motoru Başlatılıyor...");
+    console.log("[EBA TV v3] Akıllı Navigasyon ve Klavye Motoru Devrede.");
 
-    // 1. Yüksek Kontrastlı TV Odak Stillerini Enjekte Et
-    const styleId = "eba-tv-advanced-styles";
+    // 1. TV Odak Stilleri
+    const styleId = "eba-tv-v3-styles";
     if (!document.getElementById(styleId)) {
         const style = document.createElement("style");
         style.id = styleId;
         style.innerHTML = `
-            /* Seçili öğe için parlak TV çerçevesi */
             .tv-focused, *:focus {
                 outline: 4px solid #ff9800 !important;
                 outline-offset: 3px !important;
-                box-shadow: 0 0 20px rgba(255, 152, 0, 0.9) !important;
-                transform: scale(1.04) !important;
+                box-shadow: 0 0 25px rgba(255, 152, 0, 0.95) !important;
+                transform: scale(1.03) !important;
                 transition: transform 0.12s ease-out, outline 0.12s ease-out !important;
                 z-index: 99999 !important;
             }
-            /* Fare imlecini tamamen kaldır */
+            /* Input alanlarında mavi odak */
+            input.tv-focused, textarea.tv-focused {
+                outline: 4px solid #00bcd4 !important;
+                box-shadow: 0 0 25px rgba(0, 188, 212, 0.95) !important;
+                background-color: #fffde7 !important;
+            }
+            /* Fare imlecini gizle */
             * {
                 cursor: none !important;
                 -webkit-tap-highlight-color: transparent !important;
-            }
-            /* Video oynatıcıda odak çerçevesi */
-            video.tv-focused {
-                outline: 4px solid #2196f3 !important;
             }
         `;
         document.head.appendChild(style);
@@ -45,31 +43,39 @@
 
     let currentFocus = null;
 
-    // Etkileşimli öğe seçicisi (EBA'ya özel sınıflar dahil)
     const INTERACTIVE_SELECTOR = [
-        'a[href]', 'button:not([disabled])', 'input:not([disabled])', 'select', 'textarea',
-        '[tabindex="0"]', '[role="button"]', '[role="link"]', '[role="tab"]',
-        '[onclick]', '.btn', '.button', '.card', '.course-card', '.unit-item',
-        '.subject-item', '.lesson-box', '.video-item', '.exam-item', '.play-btn',
-        'video', '.vjs-control', '.vjs-play-control'
+        'input:not([type="hidden"]):not([disabled])',
+        'button:not([disabled])',
+        'a[href]',
+        'textarea',
+        'select',
+        '[tabindex="0"]',
+        '[role="button"]',
+        '[role="link"]',
+        '[onclick]',
+        '.btn',
+        '.button',
+        '.card',
+        '.course-card',
+        '.unit-item',
+        '.video-item',
+        'video'
     ].join(', ');
 
-    // 2. Sayfadaki tıklanabilir öğeleri bulup odaklanabilir yapma
-    function prepareElements(root = document) {
+    // 2. Tıklanabilir öğeleri bul
+    function prepareElements() {
         try {
-            const elements = root.querySelectorAll(INTERACTIVE_SELECTOR);
-            elements.forEach(el => {
-                if (!el.getAttribute("tabindex") && el.tagName !== "A" && el.tagName !== "BUTTON" && el.tagName !== "INPUT") {
+            document.querySelectorAll(INTERACTIVE_SELECTOR).forEach(el => {
+                if (!el.getAttribute("tabindex") && el.tagName !== "INPUT" && el.tagName !== "BUTTON" && el.tagName !== "A") {
                     el.setAttribute("tabindex", "0");
                 }
             });
         } catch (e) {}
     }
 
-    // 3. Görünür ve Odaklanabilir Öğeleri Filtreleme
+    // 3. Görünür Öğeleri Listele
     function getFocusableElements() {
-        // Aktif bir modal/diyalog var mı kontrol et
-        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container, .modal-dialog');
+        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container');
         const container = modal || document;
 
         const all = Array.from(container.querySelectorAll(INTERACTIVE_SELECTOR));
@@ -81,24 +87,34 @@
             const style = window.getComputedStyle(el);
             if (style.visibility === "hidden" || style.display === "none" || style.opacity === "0") return false;
 
-            // Ekran sınırlarında veya yakınında mı?
             return rect.bottom >= -50 && rect.top <= (window.innerHeight + 50) &&
                    rect.right >= -50 && rect.left <= (window.innerWidth + 50);
         });
     }
 
-    // 4. Akıllı Odak Verme ve Kurtarma
-    function setFocus(el) {
+    // 4. Odak Verme ve Klavye Yönetimi
+    function setFocus(el, shouldOpenKeyboard = false) {
         if (!el) return;
         if (currentFocus && currentFocus !== el) {
             currentFocus.classList.remove("tv-focused");
-            try { currentFocus.blur(); } catch (e) {}
         }
         currentFocus = el;
         currentFocus.classList.add("tv-focused");
         try { currentFocus.focus(); } catch (e) {}
 
-        // TV ekranında odağı merkeze kaydır (Yatay karuseller için de çalışır)
+        const isInput = (el.tagName === "INPUT" && el.type !== "submit" && el.type !== "button" && el.type !== "checkbox") || el.tagName === "TEXTAREA";
+
+        if (isInput) {
+            if (shouldOpenKeyboard && window.AndroidTV && window.AndroidTV.showKeyboard) {
+                window.AndroidTV.showKeyboard();
+            }
+        } else {
+            // Input dışı bir yere geçildiyse klavyeyi gizle
+            if (window.AndroidTV && window.AndroidTV.hideKeyboard) {
+                window.AndroidTV.hideKeyboard();
+            }
+        }
+
         currentFocus.scrollIntoView({
             behavior: "smooth",
             block: "center",
@@ -106,22 +122,48 @@
         });
     }
 
-    function recoverFocusIfNeeded() {
-        if (!currentFocus || !document.body.contains(currentFocus) || window.getComputedStyle(currentFocus).display === 'none') {
-            const elements = getFocusableElements();
-            if (elements.length > 0) {
-                // Ekranın en sol-üstünde en belirgin öğeye odaklan
-                setFocus(elements[0]);
+    // 5. e-Devlet ve Form Odak Sıralayıcısı (Özel Kural)
+    function handleFormNavigation(direction) {
+        if (!currentFocus) return false;
+        
+        // e-Devlet veya standart form alanları
+        const isTrid = currentFocus.id === "trid" || currentFocus.name === "trid";
+        const isPwd = currentFocus.id === "egp_pwd" || currentFocus.type === "password";
+
+        if (direction === "DOWN") {
+            if (isTrid) {
+                const pwdInput = document.querySelector('input[type="password"], #egp_pwd');
+                if (pwdInput) {
+                    setFocus(pwdInput, true);
+                    return true;
+                }
+            } else if (isPwd) {
+                const submitBtn = document.querySelector('input[type="submit"], button[name="submitButton"], .btn-primary, button[type="submit"]');
+                if (submitBtn) {
+                    setFocus(submitBtn, false);
+                    return true;
+                }
+            }
+        } else if (direction === "UP") {
+            if (isPwd) {
+                const tridInput = document.querySelector('#trid, input[name="trid"], input[type="text"]');
+                if (tridInput) {
+                    setFocus(tridInput, true);
+                    return true;
+                }
             }
         }
+        return false;
     }
 
-    // 5. Gelişmiş 2D Mekânsal Navigasyon (Açı ve Mesafe Ağırlıklı)
+    // 6. 2D Mekânsal Navigasyon
     function navigate(direction) {
+        // Önce form/e-Devlet özel kuralını dene
+        if (handleFormNavigation(direction)) return;
+
         const elements = getFocusableElements();
         if (elements.length === 0) return;
 
-        // Odak kaybolmuşsa hemen toparla
         if (!currentFocus || !document.body.contains(currentFocus)) {
             setFocus(elements[0]);
             return;
@@ -148,27 +190,27 @@
             let primaryDist = 0;
             let secondaryDist = 0;
 
-            if (direction === "UP" && dy < -5) {
+            if (direction === "UP" && dy < -4) {
                 inDirection = true;
                 primaryDist = Math.abs(dy);
                 secondaryDist = Math.abs(dx);
-            } else if (direction === "DOWN" && dy > 5) {
+            } else if (direction === "DOWN" && dy > 4) {
                 inDirection = true;
                 primaryDist = Math.abs(dy);
                 secondaryDist = Math.abs(dx);
-            } else if (direction === "LEFT" && dx < -5) {
+            } else if (direction === "LEFT" && dx < -4) {
                 inDirection = true;
                 primaryDist = Math.abs(dx);
                 secondaryDist = Math.abs(dy);
-            } else if (direction === "RIGHT" && dx > 5) {
+            } else if (direction === "RIGHT" && dx > 4) {
                 inDirection = true;
                 primaryDist = Math.abs(dx);
                 secondaryDist = Math.abs(dy);
             }
 
             if (inDirection) {
-                // Ana eksendeki mesafe ile sapmayı oranla (dikey harekette yatay sapmaya ceza ver)
-                const distance = Math.hypot(primaryDist, secondaryDist * 2.2);
+                // Ana eksene göre ağırlıklı mesafe
+                const distance = Math.hypot(primaryDist, secondaryDist * 1.8);
                 if (distance < minDistance) {
                     minDistance = distance;
                     bestCandidate = el;
@@ -177,20 +219,30 @@
         }
 
         if (bestCandidate) {
-            setFocus(bestCandidate);
+            const isInput = bestCandidate.tagName === "INPUT" && bestCandidate.type !== "submit";
+            setFocus(bestCandidate, isInput);
         } else {
-            // Eğer o yönde görünür aday yoksa ve eleman kaydırılabilir bir kap içindeyse sayfayı kaydır
+            // Aday bulunamazsa sayfayı kaydır
             if (direction === "DOWN") window.scrollBy({ top: 250, behavior: "smooth" });
             else if (direction === "UP") window.scrollBy({ top: -250, behavior: "smooth" });
             else if (direction === "RIGHT") window.scrollBy({ left: 300, behavior: "smooth" });
             else if (direction === "LEFT") window.scrollBy({ left: -300, behavior: "smooth" });
-            setTimeout(recoverFocusIfNeeded, 200);
         }
     }
 
-    // 6. Eksiksiz Tıklama (Tüm event zincirini tetikle)
+    // 7. Tıklama
     function simulateFullClick(el) {
         if (!el) return;
+        const isInput = el.tagName === "INPUT" && el.type !== "submit";
+
+        if (isInput) {
+            el.focus();
+            if (window.AndroidTV && window.AndroidTV.showKeyboard) {
+                window.AndroidTV.showKeyboard();
+            }
+            return;
+        }
+
         ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
             const evt = new MouseEvent(type, {
                 bubbles: true,
@@ -201,119 +253,76 @@
             });
             el.dispatchEvent(evt);
         });
-        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-            el.focus();
-        }
     }
 
-    // 7. Video Oynatıcı Entegrasyonu
-    function handleVideoKey(video, key) {
-        if (key === "ENTER") {
-            if (video.paused) video.play();
-            else video.pause();
-            return true;
-        } else if (key === "LEFT") {
-            video.currentTime = Math.max(0, video.currentTime - 10);
-            return true;
-        } else if (key === "RIGHT") {
-            video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
-            return true;
-        }
-        return false;
-    }
-
-    // 8. Tuş Dinleyici (Android D-Pad)
+    // 8. Tuş Dinleyicisi
     window.addEventListener("keydown", function (e) {
-        // Video oynatıcı üzerindeyse özel medya kontrolleri
-        const activeVideo = currentFocus && (currentFocus.tagName === "VIDEO" ? currentFocus : currentFocus.querySelector("video"));
-        
-        switch (e.keyCode) {
-            case 38: // UP
-            case 19: // KEYCODE_DPAD_UP
-                navigate("UP");
-                e.preventDefault();
-                break;
-            case 40: // DOWN
-            case 20: // KEYCODE_DPAD_DOWN
-                navigate("DOWN");
-                e.preventDefault();
-                break;
-            case 37: // LEFT
-            case 21: // KEYCODE_DPAD_LEFT
-                if (activeVideo && handleVideoKey(activeVideo, "LEFT")) {
-                    e.preventDefault();
-                } else {
-                    navigate("LEFT");
+        const isCurrentlyTyping = currentFocus && 
+            (currentFocus.tagName === "INPUT" && currentFocus.type !== "submit") && 
+            document.activeElement === currentFocus;
+
+        // D-Pad Yön Tuşları
+        if (e.keyCode === 38 || e.keyCode === 19) { // UP
+            navigate("UP");
+            e.preventDefault();
+        } else if (e.keyCode === 40 || e.keyCode === 20) { // DOWN
+            navigate("DOWN");
+            e.preventDefault();
+        } else if (e.keyCode === 37 || e.keyCode === 21) { // LEFT
+            // Eğer bir input içinde yazı yazılıyorsa metin içinde imleç hareketine izin ver
+            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart > 0) {
+                return; // Normal imleç hareket etsin
+            }
+            navigate("LEFT");
+            e.preventDefault();
+        } else if (e.keyCode === 39 || e.keyCode === 22) { // RIGHT
+            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart < currentFocus.value.length) {
+                return;
+            }
+            navigate("RIGHT");
+            e.preventDefault();
+        } else if (e.keyCode === 13 || e.keyCode === 23) { // OK / ENTER
+            if (currentFocus) {
+                simulateFullClick(currentFocus);
+                // Submit butonu değilse default davranışı engelle
+                if (currentFocus.type !== "submit") {
                     e.preventDefault();
                 }
-                break;
-            case 39: // RIGHT
-            case 22: // KEYCODE_DPAD_RIGHT
-                if (activeVideo && handleVideoKey(activeVideo, "RIGHT")) {
-                    e.preventDefault();
-                } else {
-                    navigate("RIGHT");
-                    e.preventDefault();
-                }
-                break;
-            case 13: // ENTER
-            case 23: // KEYCODE_DPAD_CENTER
-                if (activeVideo && handleVideoKey(activeVideo, "ENTER")) {
-                    e.preventDefault();
-                } else if (currentFocus) {
-                    simulateFullClick(currentFocus);
-                    e.preventDefault();
-                    setTimeout(recoverFocusIfNeeded, 400);
-                }
-                break;
+            }
         }
+        // Diğer tuşlar (harfler, rakamlar, Backspace vb.) engellenmez; doğrudan inputa yazılır.
     }, true);
 
-    // 9. SPA ve Dinamik Sayfa Geçişlerini İzleme (EBA SPA Uyumluluğu)
-    function onRouteOrDOMChange() {
+    // 9. Sayfa Değişikliklerini Dinleme (SPA ve DOM)
+    function onPageUpdate() {
         prepareElements();
-        setTimeout(recoverFocusIfNeeded, 300);
+        // Eğer e-Devlet giriş sayfasındaysak doğrudan T.C. kutucuğuna odaklan
+        if (window.location.hostname.includes("edevlet")) {
+            const trid = document.querySelector('#trid, input[name="trid"]');
+            if (trid) {
+                setTimeout(() => setFocus(trid, true), 300);
+                return;
+            }
+        }
+        // Sayfada ilk odak yoksa ilk öğeye odaklan
+        if (!currentFocus || !document.body.contains(currentFocus)) {
+            const elements = getFocusableElements();
+            if (elements.length > 0) setFocus(elements[0]);
+        }
     }
 
-    // pushState ve replaceState'i sar
     const origPush = history.pushState;
     history.pushState = function () {
         origPush.apply(this, arguments);
-        onRouteOrDOMChange();
+        setTimeout(onPageUpdate, 300);
     };
 
-    const origReplace = history.replaceState;
-    history.replaceState = function () {
-        origReplace.apply(this, arguments);
-        onRouteOrDOMChange();
-    };
+    window.addEventListener("popstate", () => setTimeout(onPageUpdate, 300));
+    window.addEventListener("DOMContentLoaded", onPageUpdate);
+    window.addEventListener("load", onPageUpdate);
 
-    window.addEventListener("popstate", onRouteOrDOMChange);
-    window.addEventListener("hashchange", onRouteOrDOMChange);
-
-    // DOM değişikliklerini izle
-    const observer = new MutationObserver((mutations) => {
-        let shouldRefresh = false;
-        for (const m of mutations) {
-            if (m.addedNodes.length > 0) {
-                shouldRefresh = true;
-                break;
-            }
-        }
-        if (shouldRefresh) {
-            prepareElements();
-            if (!currentFocus || !document.body.contains(currentFocus)) {
-                recoverFocusIfNeeded();
-            }
-        }
-    });
-
+    const observer = new MutationObserver(() => prepareElements());
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    // İlk çalıştırma
-    window.addEventListener("DOMContentLoaded", onRouteOrDOMChange);
-    window.addEventListener("load", onRouteOrDOMChange);
-    onRouteOrDOMChange();
-
-    console.log("[EBA TV] Ultra Optimize Navigasyon Motoru Devrede.");
+    onPageUpdate();
 })();
