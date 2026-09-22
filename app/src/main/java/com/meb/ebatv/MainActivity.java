@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // Canlı Chromium Hata Ayıklamayı Etkinleştir
+        WebView.setWebContentsDebuggingEnabled(true);
+
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 
         FrameLayout rootLayout = new FrameLayout(this);
@@ -212,7 +215,6 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().flush();
     }
 
-    // Doğrudan Donanım Kumanda Tuşlarını JavaScript Navigasyon Motoruna İletme
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
