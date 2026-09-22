@@ -1,24 +1,11 @@
 /**
- * EBA Android TV Evrensel Donanım Kumanda Motoru v7.0 (Precision Navigation)
- * 
- * 1. EBA Ana Sayfası: "Giriş Yap" butonuna otomatik odaklanma
- * 2. EBA Login Sayfası (/login):
- *    - T.C. Kimlik No
- *    - Şifre
- *    - Giriş Yap
- *    - e-Devlet Butonu (Mavi Ay-Yıldız)
- *    - MEBBİS / Öğretmen
- *    - EBA Kod / Karekod
- *    (Yukarı/Aşağı/Sağ/Sol ile tam sıralı geçiş)
- * 3. e-Devlet Sayfası (giris.edevlet.gov.tr):
- *    - T.C. Kimlik (#trid) -> Şifre (#egp_pwd) -> Giriş Yap (submit)
- * 4. Klavyenin otomatik açılması ve yazı yazarken engellenmeme
+ * EBA Android TV Evrensel Donanım Kumanda Motoru v8.0 (Bulletproof SSO & Login)
  */
 
 (function () {
-    console.log("[EBA TV v7.0] Hassas Kumanda Motoru Başlatıldı.");
+    console.log("[EBA TV v8.0] SSO & Giriş Motoru Aktif.");
 
-    const styleId = "eba-tv-v7-styles";
+    const styleId = "eba-tv-v8-styles";
     if (!document.getElementById(styleId)) {
         const style = document.createElement("style");
         style.id = styleId;
@@ -28,7 +15,7 @@
                 outline-offset: 4px !important;
                 box-shadow: 0 0 35px rgba(255, 152, 0, 1) !important;
                 transform: scale(1.03) !important;
-                transition: transform 0.1s ease-out, outline 0.1s ease-out !important;
+                transition: transform 0.08s ease-out, outline 0.08s ease-out !important;
                 z-index: 999999 !important;
             }
             input.tv-focused, textarea.tv-focused {
@@ -78,111 +65,70 @@
         });
     }
 
-    // 1. Modern EBA Login (/login) İçin Özel Sıralı Navigasyon
-    function handleEbaLoginNavigation(direction) {
-        if (!window.location.pathname.includes("login")) return false;
+    // Evrensel Form Navigasyonu (e-Devlet, SSO, MEBBİS, EBA Login için etki alanı bağımsız)
+    function handleFormNavigation(direction) {
+        if (!currentFocus) return false;
 
-        // Sayfadaki ana bileşenleri tespit et
-        const tridInput = document.querySelector('input[type="text"], input:not([type="password"]):not([type="hidden"])');
-        const pwdInput = document.querySelector('input[type="password"]');
-        const loginBtn = document.querySelector('button[type="submit"], button.btn-primary') || 
-                         Array.from(document.querySelectorAll('button, .btn')).find(b => b.textContent.includes('Giriş Yap'));
+        const trid = document.querySelector('#trid, input[name="trid"], input[placeholder*="Kimlik"], input[type="text"], input[type="number"]');
+        const pwd = document.querySelector('#egp_pwd, input[name="egp_pwd"], input[type="password"]');
         
-        // "veya şununla devam et" altındaki 3 kart (e-Devlet, MEBBİS, vb.)
-        const iconCards = Array.from(document.querySelectorAll('div, button, a')).filter(el => {
-            if (!el || el.children.length > 3) return false;
-            const r = el.getBoundingClientRect();
-            // Genişlik ve yükseklik yaklaşık kare (80-150px) ve ekranın alt yarısında
-            return r.width >= 60 && r.width <= 200 && r.height >= 50 && r.height <= 150 && r.top > 400;
-        });
+        // Giriş Yap ve İptal Butonları
+        let submitBtn = document.querySelector('input[type="submit"], button[type="submit"], button[name="submitButton"], .btn-primary');
+        if (!submitBtn) {
+            submitBtn = Array.from(document.querySelectorAll('button, .btn, input[type="button"]')).find(b => (b.textContent || b.value || '').includes('Giriş'));
+        }
 
-        // e-Devlet (mavi ay-yıldız) ilk karttır
-        const edevletBtn = iconCards[0] || null;
-        const mebbisBtn = iconCards[1] || null;
-        const ogretmenBtn = iconCards[2] || null;
+        let cancelBtn = document.querySelector('input[value*="İptal"], a.btn-cancel, .btn-default');
+        if (!cancelBtn) {
+            cancelBtn = Array.from(document.querySelectorAll('button, a, .btn, input')).find(b => (b.textContent || b.value || '').includes('İptal'));
+        }
 
-        const otherLogins = Array.from(document.querySelectorAll('button, div, a')).filter(el => {
-            const t = el.textContent || '';
-            return t.includes('EBA Kod') || t.includes('Karekod');
-        });
-        const ebaKodBtn = otherLogins.find(el => el.textContent.includes('EBA Kod')) || null;
-        const karekodBtn = otherLogins.find(el => el.textContent.includes('Karekod')) || null;
+        const isAtTrid = currentFocus === trid || currentFocus.id === "trid" || currentFocus.name === "trid";
+        const isAtPwd = currentFocus === pwd || currentFocus.id === "egp_pwd" || currentFocus.type === "password";
+        const isAtSubmit = currentFocus === submitBtn || (submitBtn && submitBtn.contains(currentFocus));
+        const isAtCancel = currentFocus === cancelBtn || (cancelBtn && cancelBtn.contains(currentFocus));
 
         if (direction === "DOWN") {
-            if (currentFocus === tridInput && pwdInput) {
-                setFocus(pwdInput, true); return true;
-            } else if ((currentFocus === pwdInput || currentFocus?.tagName === 'SVG' || currentFocus?.className?.includes('eye')) && loginBtn) {
-                setFocus(loginBtn, false); return true;
-            } else if (currentFocus === loginBtn && edevletBtn) {
-                setFocus(edevletBtn, false); return true;
-            } else if ((currentFocus === edevletBtn || currentFocus === mebbisBtn || currentFocus === ogretmenBtn) && ebaKodBtn) {
-                setFocus(ebaKodBtn, false); return true;
-            } else if (currentFocus === ebaKodBtn && karekodBtn) {
-                setFocus(karekodBtn, false); return true;
+            if (isAtTrid && pwd) {
+                setFocus(pwd, true);
+                return true;
+            } else if (isAtPwd && submitBtn) {
+                setFocus(submitBtn, false);
+                return true;
             }
         } else if (direction === "UP") {
-            if (currentFocus === karekodBtn && ebaKodBtn) {
-                setFocus(ebaKodBtn, false); return true;
-            } else if (currentFocus === ebaKodBtn && edevletBtn) {
-                setFocus(edevletBtn, false); return true;
-            } else if ((currentFocus === edevletBtn || currentFocus === mebbisBtn || currentFocus === ogretmenBtn) && loginBtn) {
-                setFocus(loginBtn, false); return true;
-            } else if (currentFocus === loginBtn && pwdInput) {
-                setFocus(pwdInput, true); return true;
-            } else if (currentFocus === pwdInput && tridInput) {
-                setFocus(tridInput, true); return true;
-            }
-        } else if (direction === "RIGHT") {
-            if (currentFocus === edevletBtn && mebbisBtn) {
-                setFocus(mebbisBtn, false); return true;
-            } else if (currentFocus === mebbisBtn && ogretmenBtn) {
-                setFocus(ogretmenBtn, false); return true;
+            if ((isAtSubmit || isAtCancel) && pwd) {
+                setFocus(pwd, true);
+                return true;
+            } else if (isAtPwd && trid) {
+                setFocus(trid, true);
+                return true;
             }
         } else if (direction === "LEFT") {
-            if (currentFocus === ogretmenBtn && mebbisBtn) {
-                setFocus(mebbisBtn, false); return true;
-            } else if (currentFocus === mebbisBtn && edevletBtn) {
-                setFocus(edevletBtn, false); return true;
+            if (isAtSubmit && cancelBtn) {
+                setFocus(cancelBtn, false);
+                return true;
+            }
+        } else if (direction === "RIGHT") {
+            if (isAtCancel && submitBtn) {
+                setFocus(submitBtn, false);
+                return true;
             }
         }
 
         return false;
     }
 
-    // 2. e-Devlet Giriş Ekranı (giris.edevlet.gov.tr) Navigasyonu
-    function handleEdevletNavigation(direction) {
-        if (!window.location.hostname.includes("edevlet")) return false;
-
-        const isTrid = currentFocus && (currentFocus.id === "trid" || currentFocus.name === "trid");
-        const isPwd = currentFocus && (currentFocus.id === "egp_pwd" || currentFocus.name === "egp_pwd" || currentFocus.type === "password");
-
-        if (direction === "DOWN") {
-            if (isTrid) {
-                const pwd = document.querySelector('#egp_pwd, input[type="password"]');
-                if (pwd) { setFocus(pwd, true); return true; }
-            } else if (isPwd) {
-                const btn = document.querySelector('input[type="submit"], button[name="submitButton"], .btn-primary, button[type="submit"]');
-                if (btn) { setFocus(btn, false); return true; }
-            }
-        } else if (direction === "UP") {
-            if (isPwd) {
-                const trid = document.querySelector('#trid, input[name="trid"], input[type="text"]');
-                if (trid) { setFocus(trid, true); return true; }
-            }
-        }
-        return false;
-    }
-
-    // 3. Genel 2D Geometrik Navigasyon
+    // Genel Geometrik Navigasyon
     function getFocusableElements() {
         const selector = 'input:not([type="hidden"]):not([disabled]), button:not([disabled]), a[href], textarea, select, [tabindex="0"], [role="button"], video';
         const all = Array.from(document.querySelectorAll(selector));
 
         return all.filter(el => {
             if (el.disabled || el.getAttribute("aria-hidden") === "true") return false;
-            // Şifre gizle/göster göz ikonunu atla (navigasyonu bozmasın)
+            // Şifre gösterme ikonunu atla
             if (el.tagName === 'BUTTON' && el.querySelector('svg') && !el.textContent.trim()) return false;
-            
+
             const rect = el.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) return false;
 
@@ -194,9 +140,7 @@
     }
 
     function navigate(direction) {
-        // Özel form kurallarını kontrol et
-        if (handleEbaLoginNavigation(direction)) return;
-        if (handleEdevletNavigation(direction)) return;
+        if (handleFormNavigation(direction)) return;
 
         const elements = getFocusableElements();
         if (elements.length === 0) return;
@@ -282,9 +226,9 @@
         });
     }
 
-    // Android MainActivity tarafından çağrılan köprü
+    // Donanım Kumanda Tuş Köprüsü
     window.onTvRemoteKey = function (key) {
-        console.log("[EBA TV v7] Kumanda Tuşu:", key);
+        console.log("[EBA TV v8] Kumanda:", key);
 
         if (isInvalidFocus(currentFocus)) {
             updatePage();
@@ -316,25 +260,14 @@
             }
         }
 
-        // 2. Modern EBA Login Sayfası (/login) Önceliği: T.C. Kimlik No Kutusu
-        if (window.location.pathname.includes("login")) {
-            const trid = document.querySelector('input[type="text"], input:not([type="password"]):not([type="hidden"])');
-            if (trid) {
-                setFocus(trid, true);
-                return;
-            }
+        // 2. Form Sayfası Önceliği (e-Devlet / SSO / EBA Login): Her zaman T.C. Kimlik kutusuna odaklan
+        const trid = document.querySelector('#trid, input[name="trid"], input[placeholder*="Kimlik"], input[type="text"]');
+        if (trid) {
+            setFocus(trid, true);
+            return;
         }
 
-        // 3. e-Devlet Giriş Sayfası Önceliği: T.C. Kimlik Kutusu
-        if (window.location.hostname.includes("edevlet")) {
-            const trid = document.querySelector('#trid, input[name="trid"]');
-            if (trid) {
-                setFocus(trid, true);
-                return;
-            }
-        }
-
-        // 4. Genel İlk Öğe
+        // 3. Genel İlk Öğe
         const elements = getFocusableElements();
         if (elements.length > 0) setFocus(elements[0]);
     }
@@ -342,10 +275,10 @@
     const origPush = history.pushState;
     history.pushState = function () {
         origPush.apply(this, arguments);
-        setTimeout(updatePage, 400);
+        setTimeout(updatePage, 350);
     };
 
-    window.addEventListener("popstate", () => setTimeout(updatePage, 400));
+    window.addEventListener("popstate", () => setTimeout(updatePage, 350));
     window.addEventListener("DOMContentLoaded", updatePage);
     window.addEventListener("load", updatePage);
 
@@ -353,7 +286,7 @@
         if (isInvalidFocus(currentFocus)) {
             updatePage();
         }
-    }, 600);
+    }, 500);
 
     const observer = new MutationObserver(() => {
         if (isInvalidFocus(currentFocus)) updatePage();
@@ -361,6 +294,5 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     updatePage();
-    setTimeout(updatePage, 600);
-    setTimeout(updatePage, 1500);
+    setTimeout(updatePage, 500);
 })();
