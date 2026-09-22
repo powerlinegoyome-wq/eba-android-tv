@@ -1,39 +1,34 @@
 /**
- * EBA Android TV Evrensel Kumanda & Mekansal Navigasyon Motoru v4.0 (Universal)
+ * EBA Android TV Evrensel Donanım Kumanda Motoru v5.0 (Direct Bridge)
  * 
- * Yenilikler:
- * 1. Otomatik Modal / Duyuru Yakalama (Duyuru çıkarsa 'Kapat' veya 'Tamam'a anında odaklanır)
- * 2. iFrame ve Alt Sayfa Taraması (Test soruları ve interaktif modüller)
- * 3. Açılır Menüler (Dropdowns & Navbar Menüleri)
- * 4. Sabit Başlık (Sticky Header) Dengeleme
- * 5. Asla Kaybolmayan Sürekli Odak Koruması (Focus Guard)
+ * Özellikler:
+ * 1. window.onTvRemoteKey köprüsü (Android donanım tuşlarını doğrudan yakalar)
+ * 2. EBA Ana Sayfası: "Giriş Yap" butonuna (hero-button-primary) otomatik odaklanır
+ * 3. e-Devlet Ekranı: T.C. kutucuğuna otomatik odaklanır ve klavyeyi tetikler
+ * 4. Yön tuşlarıyla formlar, butonlar, ders kartları arasında kusursuz gezinme
+ * 5. Asla kaybolmayan canlı odak çerçevesi (#ff9800)
  */
 
 (function () {
-    console.log("[EBA TV v4.0 Universal] Navigasyon Motoru Devrede.");
+    console.log("[EBA TV v5.0 Direct Bridge] Motor Başlatıldı.");
 
-    const styleId = "eba-tv-v4-styles";
+    const styleId = "eba-tv-v5-styles";
     if (!document.getElementById(styleId)) {
         const style = document.createElement("style");
         style.id = styleId;
         style.innerHTML = `
             .tv-focused, *:focus {
-                outline: 4px solid #ff9800 !important;
-                outline-offset: 3px !important;
-                box-shadow: 0 0 25px rgba(255, 152, 0, 0.95) !important;
-                transform: scale(1.03) !important;
+                outline: 5px solid #ff9800 !important;
+                outline-offset: 4px !important;
+                box-shadow: 0 0 30px rgba(255, 152, 0, 1) !important;
+                transform: scale(1.04) !important;
                 transition: transform 0.1s ease-out, outline 0.1s ease-out !important;
                 z-index: 99999 !important;
             }
             input.tv-focused, textarea.tv-focused {
-                outline: 4px solid #00bcd4 !important;
-                box-shadow: 0 0 25px rgba(0, 188, 212, 0.95) !important;
+                outline: 5px solid #00e5ff !important;
+                box-shadow: 0 0 30px rgba(0, 229, 255, 1) !important;
                 background-color: #fffde7 !important;
-            }
-            /* Kapat butonları için özel kırmızı odak */
-            .modal-close.tv-focused, .btn-close.tv-focused, [data-dismiss="modal"].tv-focused {
-                outline: 4px solid #f44336 !important;
-                box-shadow: 0 0 25px rgba(244, 67, 54, 0.95) !important;
             }
             * {
                 cursor: none !important;
@@ -46,24 +41,21 @@
     let currentFocus = null;
 
     const INTERACTIVE_SELECTOR = [
-        'input:not([type="hidden"]):not([disabled])',
-        'button:not([disabled])',
         'a[href]',
+        'button:not([disabled])',
+        'input:not([type="hidden"]):not([disabled])',
         'textarea',
         'select',
         '[tabindex="0"]',
         '[role="button"]',
         '[role="link"]',
-        '[role="tab"]',
         '[onclick]',
-        '.btn', '.button',
+        '.btn', '.hero-button-primary',
         '.card', '.course-card', '.unit-item', '.subject-item',
-        '.video-item', '.exam-item', '.lesson-box',
-        '.dropdown-item', '.nav-link', '.menu-item',
+        '.dropdown-item', '.nav-link',
         'video'
     ].join(', ');
 
-    // 1. Tıklanabilir tüm öğeleri hazırla (iFrameler dahil)
     function prepareElements(doc = document) {
         try {
             doc.querySelectorAll(INTERACTIVE_SELECTOR).forEach(el => {
@@ -71,21 +63,11 @@
                     el.setAttribute("tabindex", "0");
                 }
             });
-
-            // Erişilebilir iFrameleri de tara
-            doc.querySelectorAll('iframe').forEach(iframe => {
-                try {
-                    const iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                    if (iDoc) prepareElements(iDoc);
-                } catch (e) {}
-            });
         } catch (e) {}
     }
 
-    // 2. Ekrandaki aktif ve görünür öğeleri topla
     function getFocusableElements() {
-        // Öncelik 1: Açık bir modal/duyuru var mı?
-        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container, .modal-dialog, .popup-container');
+        const modal = document.querySelector('.modal.show, .dialog, [role="dialog"], .swal2-container, .modal-dialog');
         const container = modal || document;
 
         const all = Array.from(container.querySelectorAll(INTERACTIVE_SELECTOR));
@@ -102,7 +84,6 @@
         });
     }
 
-    // 3. Odak Yönetimi
     function setFocus(el, shouldOpenKeyboard = false) {
         if (!el) return;
         if (currentFocus && currentFocus !== el) {
@@ -112,7 +93,7 @@
         currentFocus.classList.add("tv-focused");
         try { currentFocus.focus(); } catch (e) {}
 
-        const isInput = (el.tagName === "INPUT" && el.type !== "submit" && el.type !== "button" && el.type !== "checkbox") || el.tagName === "TEXTAREA";
+        const isInput = (el.tagName === "INPUT" && el.type !== "submit" && el.type !== "button") || el.tagName === "TEXTAREA";
 
         if (isInput) {
             if (shouldOpenKeyboard && window.AndroidTV && window.AndroidTV.showKeyboard) {
@@ -124,7 +105,6 @@
             }
         }
 
-        // Sabit başlıkları hesaba katarak ortala
         currentFocus.scrollIntoView({
             behavior: "smooth",
             block: "center",
@@ -132,20 +112,6 @@
         });
     }
 
-    // 4. Modal / Duyuru Varsa Doğrudan Butonuna Odaklan
-    function checkAndFocusModals() {
-        const modal = document.querySelector('.modal.show, [role="dialog"], .swal2-container, .announcement-popup');
-        if (modal) {
-            const btn = modal.querySelector('button.close, .btn-close, .btn-primary, [data-dismiss="modal"], button');
-            if (btn && currentFocus !== btn) {
-                setFocus(btn, false);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // 5. e-Devlet Giriş Formu Otomasyonu
     function handleFormNavigation(direction) {
         if (!currentFocus) return false;
         const isTrid = currentFocus.id === "trid" || currentFocus.name === "trid";
@@ -168,7 +134,6 @@
         return false;
     }
 
-    // 6. 2D Mekânsal Navigasyon
     function navigate(direction) {
         if (handleFormNavigation(direction)) return;
 
@@ -200,16 +165,16 @@
             let inDirection = false;
             let primary = 0, secondary = 0;
 
-            if (direction === "UP" && dy < -4) {
+            if (direction === "UP" && dy < -5) {
                 inDirection = true;
                 primary = Math.abs(dy); secondary = Math.abs(dx);
-            } else if (direction === "DOWN" && dy > 4) {
+            } else if (direction === "DOWN" && dy > 5) {
                 inDirection = true;
                 primary = Math.abs(dy); secondary = Math.abs(dx);
-            } else if (direction === "LEFT" && dx < -4) {
+            } else if (direction === "LEFT" && dx < -5) {
                 inDirection = true;
                 primary = Math.abs(dx); secondary = Math.abs(dy);
-            } else if (direction === "RIGHT" && dx > 4) {
+            } else if (direction === "RIGHT" && dx > 5) {
                 inDirection = true;
                 primary = Math.abs(dx); secondary = Math.abs(dy);
             }
@@ -227,7 +192,6 @@
             const isInput = bestCandidate.tagName === "INPUT" && bestCandidate.type !== "submit";
             setFocus(bestCandidate, isInput);
         } else {
-            // Görünür sınırda öğe yoksa sayfayı kaydır
             if (direction === "DOWN") window.scrollBy({ top: 300, behavior: "smooth" });
             else if (direction === "UP") window.scrollBy({ top: -300, behavior: "smooth" });
             else if (direction === "RIGHT") window.scrollBy({ left: 350, behavior: "smooth" });
@@ -235,7 +199,6 @@
         }
     }
 
-    // 7. Eksiksiz Tıklama
     function simulateFullClick(el) {
         if (!el) return;
         const isInput = el.tagName === "INPUT" && el.type !== "submit";
@@ -258,44 +221,43 @@
         });
     }
 
-    // 8. Tuş Dinleyici
-    window.addEventListener("keydown", function (e) {
-        const isCurrentlyTyping = currentFocus && 
-            (currentFocus.tagName === "INPUT" && currentFocus.type !== "submit") && 
-            document.activeElement === currentFocus;
-
-        if (e.keyCode === 38 || e.keyCode === 19) { // UP
-            navigate("UP"); e.preventDefault();
-        } else if (e.keyCode === 40 || e.keyCode === 20) { // DOWN
-            navigate("DOWN"); e.preventDefault();
-        } else if (e.keyCode === 37 || e.keyCode === 21) { // LEFT
-            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart > 0) return;
-            navigate("LEFT"); e.preventDefault();
-        } else if (e.keyCode === 39 || e.keyCode === 22) { // RIGHT
-            if (isCurrentlyTyping && currentFocus.value && currentFocus.selectionStart < currentFocus.value.length) return;
-            navigate("RIGHT"); e.preventDefault();
-        } else if (e.keyCode === 13 || e.keyCode === 23) { // OK / ENTER
+    // Doğrudan Java MainActivity tarafından çağrılan Donanım Köprüsü
+    window.onTvRemoteKey = function (key) {
+        console.log("[EBA TV] Kumanda Tuşu Geldi:", key);
+        if (key === "UP") navigate("UP");
+        else if (key === "DOWN") navigate("DOWN");
+        else if (key === "LEFT") navigate("LEFT");
+        else if (key === "RIGHT") navigate("RIGHT");
+        else if (key === "ENTER") {
             if (currentFocus) {
                 simulateFullClick(currentFocus);
-                if (currentFocus.type !== "submit") e.preventDefault();
+            } else {
+                updatePage();
+                if (currentFocus) simulateFullClick(currentFocus);
             }
         }
-    }, true);
+    };
 
-    // 9. Dinamik Sayfa Güncelleme ve Sürekli Odak Koruması
     function updatePage() {
         prepareElements();
-        if (checkAndFocusModals()) return;
 
-        // e-Devlet girişindeyse T.C. kutucuğuna odaklan
+        // 1. EBA Ana Sayfası Önceliği: Büyük Kırmızı "Giriş Yap" Butonu
+        const heroLoginBtn = document.querySelector('.hero-button-primary, a[href*="/login"], a.btn-primary');
+        if (heroLoginBtn && (!currentFocus || currentFocus === document.body)) {
+            setFocus(heroLoginBtn, false);
+            return;
+        }
+
+        // 2. e-Devlet Giriş Sayfası Önceliği: T.C. Kimlik Kutucuğu
         if (window.location.hostname.includes("edevlet")) {
             const trid = document.querySelector('#trid, input[name="trid"]');
-            if (trid && currentFocus !== trid && !document.activeElement.tagName.includes("INPUT")) {
-                setTimeout(() => setFocus(trid, true), 300);
+            if (trid && (!currentFocus || currentFocus === document.body)) {
+                setFocus(trid, true);
                 return;
             }
         }
 
+        // 3. Genel İlk Öğe
         if (!currentFocus || !document.body.contains(currentFocus)) {
             const elements = getFocusableElements();
             if (elements.length > 0) setFocus(elements[0]);
@@ -312,15 +274,17 @@
     window.addEventListener("DOMContentLoaded", updatePage);
     window.addEventListener("load", updatePage);
 
-    // Sürekli Odak Koruyucu (Sayfa değiştiğinde veya odak düştüğünde 1 saniyede bir kurtarır)
+    // Sayfa açıldığında ve dinamik içerik geldiğinde odaklanmayı tetikle
     setInterval(() => {
         if (!currentFocus || !document.body.contains(currentFocus) || window.getComputedStyle(currentFocus).display === 'none') {
             updatePage();
         }
-    }, 1200);
+    }, 800);
 
     const observer = new MutationObserver(() => prepareElements());
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     updatePage();
+    setTimeout(updatePage, 500);
+    setTimeout(updatePage, 1500);
 })();

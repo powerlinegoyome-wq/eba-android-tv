@@ -70,13 +70,12 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // TV Ekranini ders izlerken acik tut
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 
         FrameLayout rootLayout = new FrameLayout(this);
-        rootLayout.setBackgroundColor(Color.parseColor("#121212")); // Goz almayan koyu tema
+        rootLayout.setBackgroundColor(Color.parseColor("#121212"));
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#121212"));
@@ -97,7 +96,6 @@ public class MainActivity extends Activity {
         loadInjectionScript();
         setupWebView();
 
-        // Akilli Baslatma: Kullanici daha once ders ekranina girdiyse dogrudan orayi ac
         String lastUrl = prefs.getString(KEY_LAST_URL, DEFAULT_URL);
         webView.loadUrl(lastUrl);
     }
@@ -115,14 +113,10 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        
-        // Hiz ve kalici onbellek
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        // Modern TV / Chrome Masaustu Arayuzu
         s.setUserAgentString("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 SmartTV/EBA");
 
-        // Cerezleri kalici kil
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
@@ -168,11 +162,8 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                
-                // Cerezleri diske yaz (Oturum kaybolmasin)
                 CookieManager.getInstance().flush();
 
-                // Eger giris yapilmissa (ders.eba.gov.tr icindeyse), son adresi kaydet
                 if (url != null && url.contains("ders.eba.gov.tr") && !url.contains("login") && !url.contains("giris")) {
                     prefs.edit().putString(KEY_LAST_URL, url).apply();
                 }
@@ -212,7 +203,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        // Uygulama kapandiginda veya arka plana alindiginda oturum cerezlerini diske kaydet
         CookieManager.getInstance().flush();
     }
 
@@ -222,12 +212,28 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().flush();
     }
 
+    // Doğrudan Donanım Kumanda Tuşlarını JavaScript Navigasyon Motoruna İletme
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
 
-            if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                webView.evaluateJavascript("if(window.onTvRemoteKey) window.onTvRemoteKey('UP');", null);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                webView.evaluateJavascript("if(window.onTvRemoteKey) window.onTvRemoteKey('DOWN');", null);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                webView.evaluateJavascript("if(window.onTvRemoteKey) window.onTvRemoteKey('LEFT');", null);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                webView.evaluateJavascript("if(window.onTvRemoteKey) window.onTvRemoteKey('RIGHT');", null);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                webView.evaluateJavascript("if(window.onTvRemoteKey) window.onTvRemoteKey('ENTER');", null);
+                return true;
+            } else if (keyCode == KeyEvent.KEYCODE_BACK) {
                 if (customView != null) {
                     ((WebChromeClient) webView.getWebChromeClient()).onHideCustomView();
                     return true;
