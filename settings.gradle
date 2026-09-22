@@ -1,0 +1,2 @@
+rootProject.name = "EbaAndroidTV"
+include ':app'
