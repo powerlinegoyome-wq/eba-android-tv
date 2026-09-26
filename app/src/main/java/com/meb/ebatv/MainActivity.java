@@ -5,11 +5,16 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.net.http.SslError;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
@@ -37,6 +42,34 @@ public class MainActivity extends Activity {
     private String injectedJs = "";
 
     public class TVInterface {
+        @JavascriptInterface
+        public void triggerTap(final float x, final float y) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    webView.requestFocus();
+                    long downTime = SystemClock.uptimeMillis();
+                    long eventTime = SystemClock.uptimeMillis() + 50;
+                    MotionEvent down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0);
+                    MotionEvent up = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_UP, x, y, 0);
+                    webView.dispatchTouchEvent(down);
+                    webView.dispatchTouchEvent(up);
+                    down.recycle();
+                    up.recycle();
+
+                    webView.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                            if (imm != null) {
+                                imm.showSoftInput(webView, InputMethodManager.SHOW_FORCED);
+                            }
+                        }
+                    }, 80);
+                }
+            });
+        }
+
         @JavascriptInterface
         public void showKeyboard() {
             runOnUiThread(new Runnable() {
@@ -215,8 +248,36 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().flush();
     }
 
+    private boolean isKeyboardVisible() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsets insets = getWindow().getDecorView().getRootWindowInsets();
+                if (insets != null && insets.isVisible(WindowInsets.Type.ime())) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            Rect r = new Rect();
+            getWindow().getDecorView().getWindowVisibleDisplayFrame(r);
+            int heightDiff = getWindow().getDecorView().getHeight() - r.bottom;
+            if (heightDiff > 200) {
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        return false;
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // Klavyenin açık olduğu anlarda kumanda tuşlarını WebView çalmasın;
+        // Kullanıcı kumandayla harfleri/rakamları seçebilsin!
+        if (isKeyboardVisible()) {
+            return super.dispatchKeyEvent(event);
+        }
+
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
 
